@@ -6,10 +6,15 @@ import {
 } from "@suiet/wallet-kit";
 import "@suiet/wallet-kit/style.css";
 import { TransactionBlock } from '@mysten/sui.js/transactions';
+import { SuiClient } from '@mysten/sui.js/client';
 
 // Your deployed contract details
-const PACKAGE_ID = "0x115b7b80e45206c49de52e9c3126b458780b72992d3f18d5cb178846330146f9";
-const MINT_CAP_ID = "0xb6af74481e5e2e7ca5615b8789041ea30242d939bde503bf257e50d8ef3580b9";
+const PACKAGE_ID = "0xfbbf9e467f594d891cadefaf1f5e764b5f5e85b055bf295cf5bfab8decf7e140";
+// MintCap is optional now - only needed for mint_nft_with_cap function
+const MINT_CAP_ID = "0xdec300da3cbb52e89d7481de932fd3e274418812c456f25f63d445a2d8195adc";
+
+// Initialize Sui client
+const suiClient = new SuiClient({ url: 'https://fullnode.testnet.sui.io:443' });
 
 function App() {
   const wallet = useWallet();
@@ -34,18 +39,37 @@ function App() {
     try {
       setLoading(true);
       
-      // In a real app, you'd query the Sui RPC to get NFTs owned by the account
-      // For now, we'll show a placeholder
-      setNfts([
-        {
-          id: '0x7da80160fe4e1bef2ed91a31047fe57b1f18a7b0d57ec52e9dd87d26ced0d762',
-          name: 'My First NFT',
-          description: 'This is my first NFT on Sui!',
-          imageUrl: 'https://picsum.photos/400'
-        }
-      ]);
+      // Fetch all objects owned by the user
+      const objects = await suiClient.getOwnedObjects({
+        owner: accountAddress,
+        options: {
+          showType: true,
+          showContent: true,
+          showDisplay: true,
+        },
+      });
+
+      // Filter for SimpleNFT objects
+      const nftObjects = objects.data.filter(obj => 
+        obj.data?.type?.includes('::simple_nft::SimpleNFT')
+      );
+
+      // Parse NFT data
+      const parsedNFTs = nftObjects.map(obj => {
+        const fields = obj.data?.content?.fields || {};
+        return {
+          id: obj.data.objectId,
+          name: fields.name || 'Unknown',
+          description: fields.description || 'No description',
+          imageUrl: fields.image_url || 'https://via.placeholder.com/400',
+          creator: fields.creator || 'Unknown',
+        };
+      });
+
+      setNfts(parsedNFTs);
     } catch (error) {
       console.error('Load NFTs error:', error);
+      setMessage({ type: 'error', text: 'Failed to load NFTs from blockchain' });
     } finally {
       setLoading(false);
     }
@@ -69,10 +93,10 @@ function App() {
 
       const tx = new TransactionBlock();
       
+      // Using the public mint_nft function (no MintCap needed!)
       tx.moveCall({
         target: `${PACKAGE_ID}::simple_nft::mint_nft`,
         arguments: [
-          tx.object(MINT_CAP_ID),
           tx.pure(name),
           tx.pure(description),
           tx.pure(imageUrl),
